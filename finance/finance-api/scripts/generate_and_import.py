@@ -12,6 +12,8 @@
 """
 
 import argparse
+import glob
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -54,7 +56,7 @@ def run_generate():
     return True
 
 
-def run_import(company_id=None):
+def run_import(company_id=None, xlsx_path=None):
     """Step 2: 导入财税通"""
     print("\n" + "=" * 60)
     print("步骤 2/2: 导入财税通 (Agent2.2)")
@@ -65,6 +67,8 @@ def run_import(company_id=None):
     cmd = [sys.executable, str(script)]
     if company_id:
         cmd.extend(["--company-id", str(company_id)])
+    if xlsx_path:
+        cmd.extend(["--xlsx", str(xlsx_path)])
 
     print(f"运行: {' '.join(cmd)}")
     result = subprocess.run(cmd)
@@ -83,6 +87,7 @@ def main():
     parser.add_argument("--skip-import", action="store_true", help="跳过导入步骤")
     parser.add_argument("--company-id", type=int, help="指定公司ID")
     parser.add_argument("--preflight-only", action="store_true", help="仅运行环境检查")
+    parser.add_argument("--input-xlsx", type=str, help="直接使用指定的Excel文件（跳过生成）")
     args = parser.parse_args()
 
     if args.preflight_only:
@@ -91,12 +96,32 @@ def main():
         return
 
     success = True
+    xlsx_to_import = None
 
-    if not args.skip_generate:
+    # 如果提供了 input-xlsx，直接使用它，跳过生成
+    if args.input_xlsx:
+        xlsx_path = Path(args.input_xlsx)
+        if not xlsx_path.exists():
+            print(f"错误: 指定的Excel文件不存在: {xlsx_path}")
+            sys.exit(1)
+        print(f"使用提供的Excel文件: {xlsx_path}")
+        xlsx_to_import = xlsx_path
+    elif not args.skip_generate:
         success = run_generate() and success
+        if success:
+            # 获取最新生成的文件
+            import glob
+            generated_files = sorted(
+                glob.glob(str(ASSETS_DIR / "三表生成结果_*.xlsx")),
+                key=os.path.getmtime,
+                reverse=True
+            )
+            if generated_files:
+                xlsx_to_import = Path(generated_files[0])
+                print(f"使用最新生成的文件: {xlsx_to_import}")
 
-    if not args.skip_import and success:
-        success = run_import(args.company_id) and success
+    if not args.skip_import and success and xlsx_to_import:
+        success = run_import(args.company_id, xlsx_to_import) and success
 
     if success:
         print("\n" + "=" * 60)
